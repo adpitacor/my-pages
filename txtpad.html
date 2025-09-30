@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>TXTPad - Backed by TextDB</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #111827;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --tab-bg: #f9fafb;
+            --tab-active-bg: #e8f0fe;
+            --accent: #2563eb;
+            --btn-bg: #f3f4f6;
+            --btn-fg: #111827;
+            --btn-border: #d1d5db;
+            --btn-hover-bg: #e5e7eb;
+            --input-bg: #ffffff;
+            --input-fg: #111827;
+            --input-border: #d1d5db;
+            --danger: #ef4444;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0b0f14;
+                --fg: #e5e7eb;
+                --muted: #9ca3af;
+                --border: #1f2937;
+                --tab-bg: #0f141b;
+                --tab-active-bg: #132033;
+                --accent: #3b82f6;
+                --btn-bg: #111827;
+                --btn-fg: #e5e7eb;
+                --btn-border: #374151;
+                --btn-hover-bg: #1f2937;
+                --input-bg: #0f141b;
+                --input-fg: #e5e7eb;
+                --input-border: #374151;
+                --danger: #f87171;
+            }
+        }
+        html[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff;
+            --fg: #111827;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --tab-bg: #f9fafb;
+            --tab-active-bg: #e8f0fe;
+            --accent: #2563eb;
+            --btn-bg: #f3f4f6;
+            --btn-fg: #111827;
+            --btn-border: #d1d5db;
+            --btn-hover-bg: #e5e7eb;
+            --input-bg: #ffffff;
+            --input-fg: #111827;
+            --input-border: #d1d5db;
+        }
+        html[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #0b0f14;
+            --fg: #e5e7eb;
+            --muted: #9ca3af;
+            --border: #1f2937;
+            --tab-bg: #0f141b;
+            --tab-active-bg: #132033;
+            --accent: #3b82f6;
+            --btn-bg: #111827;
+            --btn-fg: #e5e7eb;
+            --btn-border: #374151;
+            --btn-hover-bg: #1f2937;
+            --input-bg: #0f141b;
+            --input-fg: #e5e7eb;
+            --input-border: #374151;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px 12px;
+            align-items: center;
+        }
+        .topbar .line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .topbar .line.actions {
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .topbar label {
+            min-width: 8.5em;
+            color: var(--muted);
+        }
+        .topbar input[type="text"],
+        .topbar input[type="password"] {
+            flex: 1;
+            min-width: 10rem;
+            background: var(--input-bg);
+            color: var(--input-fg);
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            outline: none;
+        }
+        .topbar input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 25%, transparent);
+        }
+
+        .btn {
+            background: var(--btn-bg);
+            color: var(--btn-fg);
+            border: 1px solid var(--btn-border);
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background .2s ease, opacity .2s ease, color .2s ease, border-color .2s ease;
+            user-select: none;
+        }
+        .btn:hover { background: var(--btn-hover-bg); }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .btn.danger {
+            color: var(--danger);
+            border-color: color-mix(in oklab, var(--danger) 50%, var(--btn-border));
+        }
+
+        #main {
+            display: none;
+            flex: 1 1 auto;
+            min-height: 0;
+            min-width: 0;
+        }
+        #main.show { display: flex; }
+
+        .tabs {
+            width: 240px;
+            min-width: 200px;
+            border-right: 1px solid var(--border);
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        #tabList {
+            list-style: none;
+            margin: 0;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow: auto;
+            min-height: 0;
+            touch-action: pan-y;
+        }
+        .tab {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--tab-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .tab.active {
+            border-color: var(--accent);
+            background: var(--tab-active-bg);
+        }
+        .tab .title {
+            flex: 1 1 auto;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        .tab .close {
+            background: transparent;
+            color: var(--muted);
+            border: none;
+            padding: 4px 6px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .tab .close:hover { background: var(--btn-hover-bg); }
+        .tab.dragging {
+            opacity: .6;
+            filter: blur(.4px) saturate(.9);
+            transform: scale(0.98);
+            box-shadow: 0 6px 16px rgba(0,0,0,.08);
+        }
+        .add {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            border: 1px dashed var(--btn-border);
+            border-radius: 6px;
+            padding: 8px;
+            background: transparent;
+            cursor: pointer;
+            color: var(--muted);
+            user-select: none;
+        }
+        .add:hover { background: var(--btn-hover-bg); }
+
+        .editor {
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid var(--border);
+        }
+        .editor textarea {
+            flex: 1 1 auto;
+            width: 100%;
+            padding: 12px;
+            border: none;
+            outline: none;
+            resize: none;
+            background: var(--bg);
+            color: var(--fg);
+            font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        .editor textarea::placeholder { color: var(--muted); }
+
+        /* 遮罩层 */
+        .mask {
+            position: fixed;
+            inset: 0;
+            background: color-mix(in oklab, var(--bg) 85%, #000);
+            backdrop-filter: blur(2px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .mask.show { display: flex; }
+        .mask .box {
+            background: var(--bg);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 18px;
+            box-shadow: 0 10px 30px rgba(0,0,0,.14);
+            font-size: 14px;
+            min-width: 180px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            #main.show { flex-direction: column; }
+            .tabs {
+                width: 100%;
+                min-width: 0;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+            #tabList {
+                flex-direction: row;
+                gap: 6px;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding: 8px 8px 10px;
+                touch-action: pan-x;
+            }
+            .tab {
+                min-width: 160px;
+                max-width: 70vw;
+            }
+            .add { min-width: 100px; }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sjcl/1.0.8/sjcl.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div class="line">
+            <label for="tokenInput">文本记录名称：</label>
+            <input id="tokenInput" type="text" placeholder="6-60位，仅 0-9 a-z A-Z - _" />
+        </div>
+        <div class="line">
+            <label for="passwordInput">密码：</label>
+            <input id="passwordInput" type="password" placeholder="可留空" />
+        </div>
+        <div class="line actions">
+            <button id="loadBtn" class="btn">读取</button>
+            <button id="saveBtn" class="btn">保存</button>
+            <button id="deleteBtn" class="btn danger">删除</button>
+            <button id="exportBtn" class="btn">导出</button>
+            <button id="themeBtn" class="btn" title="切换主题（系统/亮/暗）">🌓</button>
+        </div>
+    </header>
+
+    <main id="main">
+        <aside class="tabs">
+            <ul id="tabList" aria-label="文本列表"></ul>
+        </aside>
+        <section class="editor">
+            <textarea id="editor" placeholder="在此编辑文本..."></textarea>
+        </section>
+    </main>
+
+    <div id="mask" class="mask" aria-hidden="true" aria-live="polite">
+        <div class="box" id="maskText">处理中…</div>
+    </div>
+
+    <script>
+        (async () => {
+            // ======= State =======
+            let textdbToken = "";
+            let sjclPassword = "";
+            let contentList = null; // 与 main.show 同步：显示时为 string[]，隐藏时为 null
+            let noChange = true;
+            let activeIndex = 0;
+
+            const $ = sel => document.querySelector(sel);
+
+            // ======= Utils =======
+            const prefixErr = (msg, err) => msg + `${err?.message || err}`;
+            const tryEval = f => ({
+                fallback(errCb = () => {}) {
+                    try { return f(); } catch (err) { return errCb(err); }
+                },
+                rethrow(errCb = _ => _) {
+                    return this.fallback(err => { throw (errCb(err) ?? err); });
+                }
+            });
+            const tryEvalAsync = f => ({
+                async fallback(errCb = () => {}) {
+                    try { return await f(); } catch (err) { return errCb(err); }
+                },
+                async rethrow(errCb = _ => _) {
+                    return await this.fallback(err => { throw (errCb(err) ?? err); });
+                }
+            });
+
+            // 遮罩
+            function showMask(text = "处理中…") {
+                const mask = $("#mask");
+                $("#maskText").textContent = text;
+                mask.classList.add("show");
+                mask.setAttribute("aria-hidden", "false");
+                document.body.style.pointerEvents = "none";
+                mask.style.pointerEvents = "auto";
+            }
+            function hideMask() {
+                const mask = $("#mask");
+                mask.classList.remove("show");
+                mask.setAttribute("aria-hidden", "true");
+                document.body.style.pointerEvents = "";
+            }
+
+            // 下载
+            function downloadBlob(filename, blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            }
+
+            // 文件名清理：替换不允许字符，不处理尾部点/空格，不压缩连续下划线
+            function sanitizeFileName(name) {
+                const invalid = /[-\u001F\\/:*?"<>|]/g;
+                return String(name).replace(invalid, "_");
+            }
+
+            // ======= Crypto =======
+            const encrypt = text => (
+                sjcl.encrypt(sjclPassword, text, {
+                    ks: 256, iter: 200000, mode: 'ccm', ts: 128
+                })
+            );
+            const decrypt = cipher => sjcl.decrypt(sjclPassword, cipher);
+
+            // ======= TextDB 调用 =======
+            const callAPI = param => tryEvalAsync(() => (
+                (param == undefined
+                    ? fetch(new URL(textdbToken, callAPI._base))
+                    : fetch(new URL("update", callAPI._base), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ key: textdbToken, value: param })
+                    })
+                ).then(_ => _.text())
+            )).rethrow(
+                err => new Error(prefixErr("调用TextDB API失败", err))
+            );
+            callAPI._base = "https://textdb.online";
+
+            const validateToken = () => {
+                if (!/^[0-9A-Za-z-_]{6,60}$/.test(textdbToken)) {
+                    throw new Error("文本记录名称不符合/^[0-9A-Za-z-_]{6,60}$/，请重新设置");
+                }
+            };
+
+            const readRecord = () => tryEvalAsync(async () => {
+                validateToken();
+                const cipher = await callAPI();
+                if (!cipher) return [""];
+                try {
+                    const decrypted = tryEval(() => decrypt(cipher))
+                        .rethrow(err =>
+                            "解密失败，可能是密文已损坏、密码错误，或记录不符合加密格式。\n" +
+                            prefixErr("具体错误信息：", err)
+                        );
+                    const records = tryEval(() => JSON.parse(decrypted))
+                        .rethrow(_ => "文本记录无法作为JSON解析。");
+                    const isOldFormat = x => (
+                        typeof x == 'object' &&
+                        x != null &&
+                        Object.entries(x).length == 2 &&
+                        typeof x?.title == 'string' &&
+                        typeof x?.content == 'string'
+                    );
+                    if (Array.isArray(records)) {
+                        if (records.every(isOldFormat)) return records.map(x => x.content);
+                        else if (records.every(x => typeof x == 'string')) return [...records];
+                    }
+                    throw "文本记录JSON为未识别的结构。";
+                } catch (msg) {
+                    const flag = confirm(msg + "\n是否以明文形式显示文本记录？");
+                    if (flag) return [cipher];
+                    else throw new Error("无法解析文本记录");
+                }
+            }).fallback(
+                err => (alert(`读取失败，原因如下：\n${err}`), null)
+            );
+
+            const saveRecord = data => tryEvalAsync(async () => {
+                validateToken();
+                if (data) data = encrypt(data);
+                const resp = await callAPI(data);
+                const res = tryEval(() => JSON.parse(resp)).rethrow(
+                    _ => new Error("API返回值无法作为JSON解析")
+                );
+                if (res.status != 1) throw res?.error || res?.reason || res?.message || resp;
+                return true;
+            }).fallback(
+                err => (alert((data ? "保存" : "删除") + `失败，原因如下：\n${err}`), false)
+            );
+
+            // ======= UI 控制 =======
+            const mainEl = $("#main");
+            const tabListEl = $("#tabList");
+            const editorEl = $("#editor");
+            const themeBtn = $("#themeBtn");
+
+            const hideBrowser = () => {
+                mainEl.classList.remove("show");
+                editorEl.value = "";
+                contentList = null; // 同步到“无正在显示的文本记录”
+                activeIndex = 0;
+                updateActionButtons();
+            };
+            const showBrowser = () => {
+                mainEl.classList.add("show");
+                if (!Array.isArray(contentList) || contentList.length === 0) {
+                    contentList = [""];
+                }
+                selectTab(Math.min(Math.max(0, activeIndex), contentList.length - 1));
+                updateActionButtons();
+            };
+
+            const genTitle = cont => {
+                for (const line of String(cont).split('\n')) {
+                    const lineTrimmed = line.trim();
+                    if (lineTrimmed) return lineTrimmed.substr(0, genTitle._maxLen);
+                }
+                return "新文本";
+            };
+            genTitle._maxLen = 24;
+
+            const clearTabs = () => {
+                while (tabListEl.firstChild) tabListEl.removeChild(tabListEl.firstChild);
+                const addLi = document.createElement("li");
+                addLi.className = "add";
+                addLi.setAttribute("role", "button");
+                addLi.innerHTML = "<span>＋ 新增</span>";
+                addLi.addEventListener("click", () => {
+                    if (!Array.isArray(contentList)) contentList = [];
+                    contentList.push("");
+                    noChange = false;
+                    rebuildTabs();
+                    selectTab(contentList.length - 1, true);
+                });
+                tabListEl.appendChild(addLi);
+            };
+
+            const addTab = (cont = "", idx = null) => {
+                const index = idx ?? tabCount();
+                const li = document.createElement("li");
+                li.className = "tab";
+                li.dataset.index = String(index);
+                li.innerHTML = `
+                    <span class="title"></span>
+                    <button class="close" title="关闭">×</button>
+                `;
+
+                const titleEl = li.querySelector(".title");
+                titleEl.textContent = genTitle(cont);
+
+                li.addEventListener("click", e => {
+                    if (e.target.closest(".close")) return;
+                    selectTab(Number(li.dataset.index), true);
+                });
+
+                li.querySelector(".close").addEventListener("click", e => {
+                    e.stopPropagation();
+                    if (contentList.length <= 1) {
+                        alert("至少需要保留一个文本");
+                        return;
+                    }
+                    if (!confirm("确认关闭该标签页？")) return;
+                    const toRemove = Number(li.dataset.index);
+                    contentList.splice(toRemove, 1);
+                    noChange = false;
+                    const nextIdx = Math.min(toRemove, contentList.length - 1);
+                    rebuildTabs();
+                    selectTab(nextIdx, true);
+                });
+
+                enableDragAndDrop(li);        // 桌面端：HTML5 DnD
+                enableLongPressSort(li);      // 移动端：长按启动的拖拽排序（不影响滚动）
+
+                tabListEl.insertBefore(li, tabListEl.lastElementChild);
+            };
+
+            const tabCount = () => tabListEl.querySelectorAll(".tab").length;
+
+            const rebuildTabs = () => {
+                const current = Math.min(Math.max(0, activeIndex), (contentList?.length || 1) - 1);
+                clearTabs();
+                (contentList || [""]).forEach((cont, i) => addTab(cont, i));
+                refreshTabIndices();
+                selectTab(current);
+            };
+
+            const refreshTabIndices = () => {
+                const tabs = tabListEl.querySelectorAll(".tab");
+                tabs.forEach((li, i) => { li.dataset.index = String(i); });
+            };
+
+            const selectTab = (i, focusEditor = false) => {
+                if (!Array.isArray(contentList) || !contentList.length) return;
+                const tabs = tabListEl.querySelectorAll(".tab");
+                tabs.forEach(t => t.classList.remove("active"));
+                const target = tabs[i];
+                if (!target) return;
+                target.classList.add("active");
+                activeIndex = i;
+                editorEl.value = contentList[i] ?? "";
+                if (focusEditor) editorEl.focus();
+            };
+
+            editorEl.addEventListener("input", () => {
+                if (!Array.isArray(contentList) || contentList.length === 0) return;
+                contentList[activeIndex] = editorEl.value;
+                const currentTab = tabListEl.querySelector(`.tab[data-index="${activeIndex}"] .title`);
+                if (currentTab) currentTab.textContent = genTitle(editorEl.value);
+                noChange = false;
+            });
+
+            function updateActionButtons() {
+                const hasVisible = mainEl.classList.contains("show") && Array.isArray(contentList);
+                $("#saveBtn").disabled = !hasVisible;
+                $("#deleteBtn").disabled = !hasVisible;
+                $("#exportBtn").disabled = !hasVisible;
+            }
+
+            // ======= 拖拽排序（桌面端：HTML5 DnD） =======
+            function enableDragAndDrop(li) {
+                const isFinePointer = window.matchMedia("(pointer: fine)").matches;
+                li.draggable = isFinePointer; // 仅桌面端启用原生 DnD
+                if (!isFinePointer) return;
+
+                li.addEventListener("dragstart", (e) => {
+                    li.classList.add("dragging");
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", li.dataset.index);
+                });
+
+                li.addEventListener("dragend", () => {
+                    li.classList.remove("dragging");
+                });
+
+                tabListEl.addEventListener("dragover", (e) => {
+                    e.preventDefault();
+                    const draggingEl = tabListEl.querySelector(".tab.dragging");
+                    if (!draggingEl) return;
+                    const el = e.target.closest(".tab");
+                    if (!el || el === draggingEl) return;
+
+                    const isHorizontal = window.matchMedia("(max-width: 768px)").matches;
+                    const rect = el.getBoundingClientRect();
+                    const before = isHorizontal
+                        ? (e.clientX < rect.left + rect.width / 2)
+                        : (e.clientY < rect.top + rect.height / 2);
+
+                    if (before) {
+                        if (el.previousElementSibling !== draggingEl) {
+                            tabListEl.insertBefore(draggingEl, el);
+                            refreshTabIndices();
+                        }
+                    } else {
+                        const next = el.nextElementSibling;
+                        if (next !== draggingEl) {
+                            tabListEl.insertBefore(draggingEl, next?.classList.contains("add") ? el.nextElementSibling : next);
+                            refreshTabIndices();
+                        }
+                    }
+                });
+
+                tabListEl.addEventListener("drop", (e) => {
+                    const draggingEl = tabListEl.querySelector(".tab.dragging");
+                    if (!draggingEl) return;
+                    draggingEl.classList.remove("dragging");
+                    const tabs = [...tabListEl.querySelectorAll(".tab")];
+                    const newIndex = tabs.indexOf(draggingEl);
+                    const fromIndex = Number(draggingEl.dataset.index);
+
+                    if (fromIndex !== newIndex && fromIndex >= 0 && newIndex >= 0) {
+                        const moved = contentList.splice(fromIndex, 1)[0];
+                        contentList.splice(newIndex, 0, moved);
+                        if (activeIndex === fromIndex) activeIndex = newIndex;
+                        else if (fromIndex < activeIndex && newIndex >= activeIndex) activeIndex -= 1;
+                        else if (fromIndex > activeIndex && newIndex <= activeIndex) activeIndex += 1;
+                        refreshTabIndices();
+                        noChange = false;
+                        selectTab(activeIndex);
+                    }
+                });
+            }
+
+            // ======= 拖拽排序（移动端：长按启动，避免与滚动冲突） =======
+            function enableLongPressSort(li) {
+                const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+                if (!isCoarsePointer) return;
+
+                let longPressTimer = null;
+                let dragging = false;
+                let pointerId = null;
+                let startX = 0, startY = 0;
+
+                const start = (e) => {
+                    if (e.button !== undefined && e.button !== 0) return;
+                    if (e.target.closest(".close")) return;
+                    pointerId = e.pointerId ?? "touch";
+                    startX = e.clientX ?? (e.touches?.[0]?.clientX || 0);
+                    startY = e.clientY ?? (e.touches?.[0]?.clientY || 0);
+
+                    longPressTimer = setTimeout(() => {
+                        dragging = true;
+                        li.classList.add("dragging");
+                        li.setPointerCapture?.(pointerId);
+                    }, 300); // 长按300ms进入拖拽
+                };
+
+                const move = (e) => {
+                    const x = e.clientX ?? (e.touches?.[0]?.clientX || 0);
+                    const y = e.clientY ?? (e.touches?.[0]?.clientY || 0);
+                    if (!dragging) {
+                        // 若用户开始滚动，取消长按
+                        const dx = Math.abs(x - startX);
+                        const dy = Math.abs(y - startY);
+                        if (dx > 6 || dy > 6) {
+                            clearTimeout(longPressTimer);
+                            longPressTimer = null;
+                        }
+                        return;
+                    }
+                    // 拖拽中：查找目标位置
+                    const el = document.elementFromPoint(x, y);
+                    const targetTab = el?.closest?.(".tab");
+                    if (!targetTab || targetTab === li) return;
+
+                    const isHorizontal = window.matchMedia("(max-width: 768px)").matches;
+                    const rect = targetTab.getBoundingClientRect();
+                    const before = isHorizontal
+                        ? (x < rect.left + rect.width / 2)
+                        : (y < rect.top + rect.height / 2);
+
+                    if (before) {
+                        if (targetTab.previousElementSibling !== li) {
+                            tabListEl.insertBefore(li, targetTab);
+                            refreshTabIndices();
+                        }
+                    } else {
+                        const next = targetTab.nextElementSibling;
+                        if (next !== li) {
+                            tabListEl.insertBefore(li, next?.classList.contains("add") ? targetTab.nextElementSibling : next);
+                            refreshTabIndices();
+                        }
+                    }
+                };
+
+                const end = () => {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+
+                    if (dragging) {
+                        li.releasePointerCapture?.(pointerId);
+                        dragging = false;
+                        li.classList.remove("dragging");
+                        const tabs = [...tabListEl.querySelectorAll(".tab")];
+                        const newIndex = tabs.indexOf(li);
+                        const fromIndex = Number(li.dataset.index);
+                        if (fromIndex !== newIndex && fromIndex >= 0 && newIndex >= 0) {
+                            const moved = contentList.splice(fromIndex, 1)[0];
+                            contentList.splice(newIndex, 0, moved);
+                            if (activeIndex === fromIndex) activeIndex = newIndex;
+                            else if (fromIndex < activeIndex && newIndex >= activeIndex) activeIndex -= 1;
+                            else if (fromIndex > activeIndex && newIndex <= activeIndex) activeIndex += 1;
+                            refreshTabIndices();
+                            noChange = false;
+                            selectTab(activeIndex);
+                        }
+                    }
+                    pointerId = null;
+                };
+
+                li.addEventListener("pointerdown", start);
+                li.addEventListener("pointermove", move);
+                li.addEventListener("pointerup", end);
+                li.addEventListener("pointercancel", end);
+                // 允许正常滚动：不设置 touch-action: none；仅长按后进入拖拽
+            }
+
+            const updateBrowser = () => {
+                clearTabs();
+                for (const cont of contentList) addTab(cont);
+                showBrowser();
+            };
+
+            const resetBrowser = () => {
+                noChange = true;
+                hideBrowser();
+                clearTabs();
+                // contentList 已在 hideBrowser 置为 null
+                activeIndex = 0;
+            };
+
+            // ======= 主题切换（系统/亮/暗） =======
+            const themeModes = ["auto", "light", "dark"];
+            const themeEmojis = { auto: "🌓", light: "☀️", dark: "🌙" };
+            function applyTheme(mode) {
+                document.documentElement.setAttribute("data-theme", mode);
+                themeBtn.textContent = themeEmojis[mode] || "🌓";
+                localStorage.setItem("themeMode", mode);
+            }
+            (function initTheme() {
+                const saved = localStorage.getItem("themeMode") || "auto";
+                applyTheme(saved);
+                themeBtn.addEventListener("click", () => {
+                    const cur = document.documentElement.getAttribute("data-theme") || "auto";
+                    const next = themeModes[(themeModes.indexOf(cur) + 1) % themeModes.length];
+                    applyTheme(next);
+                });
+            })();
+
+            // ======= 关闭/刷新拦截 =======
+            window.addEventListener("beforeunload", (e) => {
+                if (!noChange) {
+                    e.preventDefault();
+                    e.returnValue = "";
+                }
+            });
+
+            // ======= 顶栏绑定 =======
+            tryEval(function init() {
+                hideBrowser();
+
+                const syncInputsToState = () => {
+                    const tokenVal = $("#tokenInput").value.trim();
+                    const passVal = $("#passwordInput").value;
+                    textdbToken = tokenVal;
+                    sjclPassword = passVal;
+                };
+
+                $("#loadBtn").addEventListener("click", async () => {
+                    syncInputsToState();
+                    if (Array.isArray(contentList) && !noChange) {
+                        const ok = confirm("读取将会覆盖未保存的修改，是否继续？");
+                        if (!ok) return;
+                    }
+                    showMask("读取中…");
+                    const result = await readRecord();
+                    hideMask();
+                    if (result == null) {
+                        hideBrowser();
+                        return;
+                    }
+                    contentList = result;
+                    noChange = true;
+                    activeIndex = 0; // 读取后重置选择到第一个
+                    updateBrowser();
+                    alert("读取成功");
+                    if (Array.isArray(contentList) && contentList.length === 1 && contentList[0] === "") {
+                        alert("文本是空的，可以使用…");
+                    }
+                });
+
+                $("#saveBtn").addEventListener("click", async () => {
+                    syncInputsToState();
+                    if (!Array.isArray(contentList)) {
+                        alert("暂无可保存内容，请先读取或新增");
+                        return;
+                    }
+                    showMask("保存中…");
+                    const ok = await saveRecord(JSON.stringify(contentList));
+                    hideMask();
+                    if (ok) {
+                        noChange = true;
+                        alert("保存成功");
+                    }
+                });
+
+                $("#deleteBtn").addEventListener("click", async () => {
+                    syncInputsToState();
+                    if (!Array.isArray(contentList)) return;
+                    const okConfirm = confirm("删除后数据将无法找回，确认继续？");
+                    if (!okConfirm) return;
+                    showMask("删除中…");
+                    const ok = await saveRecord("");
+                    hideMask();
+                    if (ok) {
+                        alert("文本已删除");
+                        resetBrowser(); // 提示后再隐藏主体
+                    }
+                });
+
+                $("#exportBtn").addEventListener("click", async () => {
+                    syncInputsToState();
+                    if (!Array.isArray(contentList)) return;
+
+                    // 确认：逐个导出为 .txt -> .zip；取消：合并导出为 JSON
+                    const doZip = confirm("点击“确认”：逐个导出为 .txt 并打包为 .zip；点击“取消”：合并导出为 JSON。");
+
+                    showMask("导出中…");
+                    try {
+                        const baseName = sanitizeFileName(textdbToken || "TXTPad");
+
+                        if (doZip) {
+                            const zip = new JSZip();
+                            (contentList || []).forEach((text, idx) => {
+                                const title = genTitle(text);
+                                const safeTitle = sanitizeFileName(title) || "未命名";
+                                const filename = `${idx + 1}-${safeTitle}.txt`; // 从1开始编号
+                                zip.file(filename, text ?? "");
+                            });
+                            const blob = await zip.generateAsync({ type: "blob" });
+                            downloadBlob(`${baseName}.zip`, blob);
+                        } else {
+                            const blob = new Blob([JSON.stringify(contentList, null, 2)], { type: "application/json" });
+                            downloadBlob(`${baseName}.json`, blob);
+                        }
+
+                        hideMask();
+                        alert("导出成功");
+                    } catch (err) {
+                        hideMask();
+                        alert(`导出失败，原因如下：\n${err?.message || err}`);
+                    }
+                });
+
+                // 文本记录名称变更：当存在“正在显示的文本记录”时才弹出确认
+                $("#tokenInput").addEventListener("change", e => {
+                    const newToken = e.target.value.trim();
+                    if (newToken === textdbToken) return;
+
+                    const hasVisible = mainEl.classList.contains("show") && Array.isArray(contentList);
+                    if (hasVisible) {
+                        if (!confirm("你设置了新的文本记录名称，将放弃当前正在显示的文本，是否继续？")) {
+                            e.target.value = textdbToken ?? "";
+                            return;
+                        }
+                        textdbToken = newToken;
+                        resetBrowser();
+                    } else {
+                        textdbToken = newToken;
+                    }
+                });
+
+                $("#passwordInput").addEventListener("change", e => {
+                    sjclPassword = e.target.value;
+                });
+
+                // 初始构建空列表（隐藏状态）
+                clearTabs();
+            }).fallback(
+                err => { alert(`初始化失败：\n${err}`); }
+            );
+        })();
+    </script>
+</body>
+</html>
