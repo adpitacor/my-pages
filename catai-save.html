@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <style>
+        html, body {
+            overflow: auto;
+        }
+        #top-bar > * {
+            margin-right: 0.5em;
+        }
+        img {
+            max-width: 150%; height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="top-bar">
+        <input id="link-input" placeholder="输入CatAI图片链接或哈希值"/>
+        <button id="load-btn" onclick="loadCatAIImage()">预览图片</button>
+    </div>
+    <div id="main-container">
+    <div></div>
+    <div></div>
+    </div>
+    <script>
+        "use strict";
+        const $ = Id => document.getElementById(Id);
+        // const makeElem = (tag, )
+        const linkInput = $("link-input");
+        const loadBtn = $("load-btn");
+        const divList = $("main-container").querySelectorAll("div");
+        const getHashReg = (...l) => new RegExp('^' + l.map(x=>`[0-9a-f]{${x}}`).join('-') + '$', 'i');
+        const hashReg = getHashReg(8, 4, 4, 4, 12);
+        // const hashReg = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i; // UUID_V4
+        const acceptList = {
+            "avif": [".avif", 1],
+            "webp": [".webp", 0.95],
+            "png": [".png", 0.9],
+            "apng": [".apng", 0.9],
+            "jpeg": [".jpeg", 0.8],
+            "gif": [".gif", 0.7]
+        };
+        const getAccept = l => [...Object.entries(l).map(([t,[_,q]])=>`image/${t};q=${q}`), "image/*;q=0.6,*/*;q=0.5"].join(',');
+        const accept = getAccept(acceptList);
+        // const accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8,*/*;q=0.7";
+        const CatAIBase = "https://catai.wiki";
+        // console.log(hashReg);
+        const tryEval = f => ({
+            fallback(errCb = () => {}) {
+                try { return f(); } catch (err) { return errCb(err); }
+            },
+            rethrow(errCb = _ => _) {
+                return this.fallback(err => { throw (errCb(err) ?? err); });
+            }
+        });
+        const tryEvalAsync = f => ({
+            async fallback(errCb = () => {}) {
+                try { return await f(); } catch (err) { return errCb(err); }
+            },
+            async rethrow(errCb = _ => _) {
+                return await this.fallback(err => { throw (errCb(err) ?? err); });
+            }
+        });
+        const getSuffix = (mimeType, blobType) => {
+            const ext = s => s?.match(/\/([^;\s]+)(?=;|$)/)?.[1]?.toLowerCase();
+            const m = ext(mimeType) ?? ext(blobType);
+            const alias = { jpg: 'jpeg', jpe: 'jpeg', pjpeg: 'jpeg', jfif: 'jpeg' };
+            return acceptList[alias[m] || m]?.[0] ?? '';
+        };
+        const updatePreview = (hash, type, container) => tryEvalAsync(async () => {
+            // console.log(container);
+            const resp = await tryEvalAsync(() => fetch(
+                CatAIBase + '/' + hash + '/' + type,
+                { headers: { 'Accept': accept } }
+            )).rethrow(
+                () => new Error("网络请求失败，可能是图片不存在或网络连接问题")
+            );
+            if (!resp.ok) throw new Error(`网络请求错误，状态码：${resp.status}`);
+            const blob = await resp.blob(); // may throw
+            const suffix = getSuffix(resp.headers.get('Content-Type'), blob.type);
+            const blobURL = URL.createObjectURL(blob);
+            const btn = document.createElement('button');
+            btn.textContent = `下载${type}（${suffix || "未识别格式"}）`;
+            const a = document.createElement('a');
+            a.href = blobURL;
+            a.download = hash + suffix;
+            a.style.display = "none";
+            btn.onclick = () => { a.click(); };
+            const img = document.createElement('img');
+            img.src = blobURL;
+            const btnDiv = document.createElement('div');
+            btnDiv.append(btn);
+            const imgDiv = document.createElement('div');
+            imgDiv.append(img);
+            document.body.append(a);
+            container.append(btnDiv, imgDiv);
+            // console.log(a, btn, img);
+            loadBtn.addEventListener('click', function cleanUp(){
+                loadBtn.removeEventListener('click', cleanUp);
+                URL.revokeObjectURL(blobURL);
+                a.remove();
+                btnDiv.remove();
+                imgDiv.remove();
+            }, true);
+        }).fallback(
+            err => { alert(`在读取${type}时发生错误：\n${err}`); }
+        );
+        const loadCatAIImage = () => tryEvalAsync(async () => {
+            loadBtn.disabled = true;
+            const hash = tryEval(() => {
+                const input = linkInput.value.trim();
+                if (hashReg.test(input)) return input;
+                const url = new URL(input); // may throw
+                // console.log(url);
+                if (url.origin != CatAIBase) return null;
+                const { pathname } = url;
+                // console.log(pathname);
+                if (!pathname.startsWith('/')) return null;
+                const pathList = pathname.split('/').slice(1);
+                // console.log(pathList);
+                const isValidPath = 
+                    pathList.length == 2 &&
+                    hashReg.test(pathList[0]) &&
+                    (pathList[1] == "cover" || pathList[1] == "bg");
+                return isValidPath ? pathList[0] : null;
+            }).fallback(() => null);
+            if (hash == null) throw new Error("输入不是合法哈希值或链接");
+            // console.log(hash);
+            await Promise.allSettled([
+                updatePreview(hash, "cover", divList[0]),
+                updatePreview(hash, "bg", divList[1])
+            ]);
+            loadBtn.disabled = false;
+            // .then(res => {
+            //     res = res.filter(x => x.status == "rejected").map(x => x.reason);
+            //     if (res.length) throw new AggregateError(res, res.join('\n'))
+            // })
+            // divList[0].
+        }).fallback(
+            err => {
+                loadBtn.disabled = false;
+                alert(`${err}`);
+            }
+        );
+    </script>
+</body>
+</html>
