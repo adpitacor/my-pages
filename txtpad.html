@@ -202,12 +202,6 @@
             border-radius: 4px;
         }
         .tab .close:hover { background: var(--btn-hover-bg); }
-        .tab.dragging {
-            opacity: .6;
-            filter: blur(.4px) saturate(.9);
-            transform: scale(0.98);
-            box-shadow: 0 6px 16px rgba(0,0,0,.08);
-        }
         .add {
             display: flex;
             align-items: center;
@@ -243,6 +237,22 @@
             font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         }
         .editor textarea::placeholder { color: var(--muted); }
+        .editor-wrap {
+            position: relative;
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+        }
+        .tab-indicator {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            color: var(--muted);
+            font-size: 12px;
+            pointer-events: none;
+            user-select: none;
+            z-index: 1;
+        }
 
         /* 遮罩层 */
         .mask {
@@ -307,6 +317,7 @@
         <div class="line actions">
             <button id="loadBtn" class="btn">读取</button>
             <button id="saveBtn" class="btn">保存</button>
+            <button id="sortBtn" class="btn">排序</button>
             <button id="deleteBtn" class="btn danger">删除</button>
             <button id="exportBtn" class="btn">导出</button>
             <button id="themeBtn" class="btn" title="切换主题（系统/亮/暗）">🌓</button>
@@ -318,7 +329,10 @@
             <ul id="tabList" aria-label="文本列表"></ul>
         </aside>
         <section class="editor">
-            <textarea id="editor" placeholder="在此编辑文本..."></textarea>
+            <div class="editor-wrap">
+                <span id="tabIndicator" class="tab-indicator"></span>
+                <textarea id="editor" placeholder="在此编辑文本..."></textarea>
+            </div>
         </section>
     </main>
 
@@ -386,7 +400,7 @@
 
             // 文件名清理：替换不允许字符，不处理尾部点/空格，不压缩连续下划线
             function sanitizeFileName(name) {
-                const invalid = /[-\u001F\\/:*?"<>|]/g;
+                const invalid = /[-\u001F\\/:*?"<>|]/g;
                 return String(name).replace(invalid, "_");
             }
 
@@ -470,12 +484,14 @@
             const tabListEl = $("#tabList");
             const editorEl = $("#editor");
             const themeBtn = $("#themeBtn");
+            const tabIndicatorEl = $("#tabIndicator");
 
             const hideBrowser = () => {
                 mainEl.classList.remove("show");
                 editorEl.value = "";
                 contentList = null; // 同步到“无正在显示的文本记录”
                 activeIndex = 0;
+                tabIndicatorEl.textContent = "";
                 updateActionButtons();
             };
             const showBrowser = () => {
@@ -545,9 +561,6 @@
                     selectTab(nextIdx, true);
                 });
 
-                enableDragAndDrop(li);        // 桌面端：HTML5 DnD
-                enableLongPressSort(li);      // 移动端：长按启动的拖拽排序（不影响滚动）
-
                 tabListEl.insertBefore(li, tabListEl.lastElementChild);
             };
 
@@ -575,6 +588,7 @@
                 target.classList.add("active");
                 activeIndex = i;
                 editorEl.value = contentList[i] ?? "";
+                updateTabIndicator();
                 if (focusEditor) editorEl.focus();
             };
 
@@ -589,166 +603,17 @@
             function updateActionButtons() {
                 const hasVisible = mainEl.classList.contains("show") && Array.isArray(contentList);
                 $("#saveBtn").disabled = !hasVisible;
+                $("#sortBtn").disabled = !hasVisible;
                 $("#deleteBtn").disabled = !hasVisible;
                 $("#exportBtn").disabled = !hasVisible;
             }
 
-            // ======= 拖拽排序（桌面端：HTML5 DnD） =======
-            function enableDragAndDrop(li) {
-                const isFinePointer = window.matchMedia("(pointer: fine)").matches;
-                li.draggable = isFinePointer; // 仅桌面端启用原生 DnD
-                if (!isFinePointer) return;
-
-                li.addEventListener("dragstart", (e) => {
-                    li.classList.add("dragging");
-                    e.dataTransfer.effectAllowed = "move";
-                    e.dataTransfer.setData("text/plain", li.dataset.index);
-                });
-
-                li.addEventListener("dragend", () => {
-                    li.classList.remove("dragging");
-                });
-
-                tabListEl.addEventListener("dragover", (e) => {
-                    e.preventDefault();
-                    const draggingEl = tabListEl.querySelector(".tab.dragging");
-                    if (!draggingEl) return;
-                    const el = e.target.closest(".tab");
-                    if (!el || el === draggingEl) return;
-
-                    const isHorizontal = window.matchMedia("(max-width: 768px)").matches;
-                    const rect = el.getBoundingClientRect();
-                    const before = isHorizontal
-                        ? (e.clientX < rect.left + rect.width / 2)
-                        : (e.clientY < rect.top + rect.height / 2);
-
-                    if (before) {
-                        if (el.previousElementSibling !== draggingEl) {
-                            tabListEl.insertBefore(draggingEl, el);
-                            refreshTabIndices();
-                        }
-                    } else {
-                        const next = el.nextElementSibling;
-                        if (next !== draggingEl) {
-                            tabListEl.insertBefore(draggingEl, next?.classList.contains("add") ? el.nextElementSibling : next);
-                            refreshTabIndices();
-                        }
-                    }
-                });
-
-                tabListEl.addEventListener("drop", (e) => {
-                    const draggingEl = tabListEl.querySelector(".tab.dragging");
-                    if (!draggingEl) return;
-                    draggingEl.classList.remove("dragging");
-                    const tabs = [...tabListEl.querySelectorAll(".tab")];
-                    const newIndex = tabs.indexOf(draggingEl);
-                    const fromIndex = Number(draggingEl.dataset.index);
-
-                    if (fromIndex !== newIndex && fromIndex >= 0 && newIndex >= 0) {
-                        const moved = contentList.splice(fromIndex, 1)[0];
-                        contentList.splice(newIndex, 0, moved);
-                        if (activeIndex === fromIndex) activeIndex = newIndex;
-                        else if (fromIndex < activeIndex && newIndex >= activeIndex) activeIndex -= 1;
-                        else if (fromIndex > activeIndex && newIndex <= activeIndex) activeIndex += 1;
-                        refreshTabIndices();
-                        noChange = false;
-                        selectTab(activeIndex);
-                    }
-                });
-            }
-
-            // ======= 拖拽排序（移动端：长按启动，避免与滚动冲突） =======
-            function enableLongPressSort(li) {
-                const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
-                if (!isCoarsePointer) return;
-
-                let longPressTimer = null;
-                let dragging = false;
-                let pointerId = null;
-                let startX = 0, startY = 0;
-
-                const start = (e) => {
-                    if (e.button !== undefined && e.button !== 0) return;
-                    if (e.target.closest(".close")) return;
-                    pointerId = e.pointerId ?? "touch";
-                    startX = e.clientX ?? (e.touches?.[0]?.clientX || 0);
-                    startY = e.clientY ?? (e.touches?.[0]?.clientY || 0);
-
-                    longPressTimer = setTimeout(() => {
-                        dragging = true;
-                        li.classList.add("dragging");
-                        li.setPointerCapture?.(pointerId);
-                    }, 300); // 长按300ms进入拖拽
-                };
-
-                const move = (e) => {
-                    const x = e.clientX ?? (e.touches?.[0]?.clientX || 0);
-                    const y = e.clientY ?? (e.touches?.[0]?.clientY || 0);
-                    if (!dragging) {
-                        // 若用户开始滚动，取消长按
-                        const dx = Math.abs(x - startX);
-                        const dy = Math.abs(y - startY);
-                        if (dx > 6 || dy > 6) {
-                            clearTimeout(longPressTimer);
-                            longPressTimer = null;
-                        }
-                        return;
-                    }
-                    // 拖拽中：查找目标位置
-                    const el = document.elementFromPoint(x, y);
-                    const targetTab = el?.closest?.(".tab");
-                    if (!targetTab || targetTab === li) return;
-
-                    const isHorizontal = window.matchMedia("(max-width: 768px)").matches;
-                    const rect = targetTab.getBoundingClientRect();
-                    const before = isHorizontal
-                        ? (x < rect.left + rect.width / 2)
-                        : (y < rect.top + rect.height / 2);
-
-                    if (before) {
-                        if (targetTab.previousElementSibling !== li) {
-                            tabListEl.insertBefore(li, targetTab);
-                            refreshTabIndices();
-                        }
-                    } else {
-                        const next = targetTab.nextElementSibling;
-                        if (next !== li) {
-                            tabListEl.insertBefore(li, next?.classList.contains("add") ? targetTab.nextElementSibling : next);
-                            refreshTabIndices();
-                        }
-                    }
-                };
-
-                const end = () => {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
-
-                    if (dragging) {
-                        li.releasePointerCapture?.(pointerId);
-                        dragging = false;
-                        li.classList.remove("dragging");
-                        const tabs = [...tabListEl.querySelectorAll(".tab")];
-                        const newIndex = tabs.indexOf(li);
-                        const fromIndex = Number(li.dataset.index);
-                        if (fromIndex !== newIndex && fromIndex >= 0 && newIndex >= 0) {
-                            const moved = contentList.splice(fromIndex, 1)[0];
-                            contentList.splice(newIndex, 0, moved);
-                            if (activeIndex === fromIndex) activeIndex = newIndex;
-                            else if (fromIndex < activeIndex && newIndex >= activeIndex) activeIndex -= 1;
-                            else if (fromIndex > activeIndex && newIndex <= activeIndex) activeIndex += 1;
-                            refreshTabIndices();
-                            noChange = false;
-                            selectTab(activeIndex);
-                        }
-                    }
-                    pointerId = null;
-                };
-
-                li.addEventListener("pointerdown", start);
-                li.addEventListener("pointermove", move);
-                li.addEventListener("pointerup", end);
-                li.addEventListener("pointercancel", end);
-                // 允许正常滚动：不设置 touch-action: none；仅长按后进入拖拽
+            function updateTabIndicator() {
+                if (Array.isArray(contentList) && contentList.length > 0) {
+                    tabIndicatorEl.textContent = `标签页 ${activeIndex + 1}`;
+                } else {
+                    tabIndicatorEl.textContent = "";
+                }
             }
 
             const updateBrowser = () => {
@@ -838,6 +703,65 @@
                         noChange = true;
                         alert("保存成功");
                     }
+                });
+
+                $("#sortBtn").addEventListener("click", () => {
+                    if (!Array.isArray(contentList) || contentList.length < 2) {
+                        alert("至少需要两个标签页才能排序");
+                        return;
+                    }
+
+                    const currentNum = activeIndex + 1;
+                    const currentTitle = genTitle(contentList[activeIndex]);
+                    const maxNum = contentList.length;
+
+                    const input = prompt(
+                        `将当前「标签页 ${currentNum}: ${currentTitle}」移动到哪个位置之后？\n\n` +
+                        `输入 0 = 移到开头\n` +
+                        `输入 1~${maxNum} = 移到指定标签页之后\n` +
+                        `（当前共 ${maxNum} 个标签页）`
+                    );
+
+                    if (input === null) return; // 用户取消
+
+                    const targetPos = parseInt(input.trim(), 10);
+                    if (isNaN(targetPos) || targetPos < 0 || targetPos > maxNum) {
+                        alert(`请输入 0 到 ${maxNum} 之间的数字`);
+                        return;
+                    }
+
+                    // 计算新的索引位置
+                    // targetPos=0 表示插入到开头，即新索引为 0
+                    // targetPos=n 表示插入到第 n 个之后，即新索引为 n（但要考虑移除自身的影响）
+                    const fromIndex = activeIndex;
+                    let toIndex = targetPos; // 目标位置（插入到 targetPos 之后）
+
+                    // 如果目标位置就是当前位置或当前位置的前一个，则无需移动
+                    if (toIndex === fromIndex || toIndex === fromIndex + 1) {
+                        alert("标签页位置未改变");
+                        return;
+                    }
+
+                    // 从数组中取出当前内容
+                    const [movedContent] = contentList.splice(fromIndex, 1);
+
+                    // 如果原位置在目标位置之前，取出后目标索引需要减 1
+                    if (fromIndex < toIndex) {
+                        toIndex -= 1;
+                    }
+
+                    // 插入到新位置
+                    contentList.splice(toIndex, 0, movedContent);
+
+                    // 更新 activeIndex 为新位置
+                    activeIndex = toIndex;
+                    noChange = false;
+
+                    // 重建标签页并选中
+                    rebuildTabs();
+                    selectTab(activeIndex, true);
+
+                    alert(`已移动到标签页 ${activeIndex + 1}`);
                 });
 
                 $("#deleteBtn").addEventListener("click", async () => {
